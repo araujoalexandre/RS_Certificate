@@ -19,6 +19,6 @@ export CUDA_VISIBLE_DEVICES=''
 
 dim=$1
 
-srun --output=log_certificate_${dim}.logs python3 -u certificat.py --dim ${dim}
+srun --output=log_${dim}.logs python3 -u certify.py --dim ${dim}
 
 
