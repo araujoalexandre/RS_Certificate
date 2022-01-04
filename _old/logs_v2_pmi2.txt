@@ -1,8 +1,0 @@
-sigma0 0.5, sigma1 0.55
-pABar_sigma0 0.8, pABar_sigma1 0.85
-Dim: 60
-Certificat Cohen et al.: 0.42081061678645715
-
-Dim 60, best certificate is 0.5016309292864571, duration: 2327.512
-Dim 100, best certificate is 0.44303717928645714, duration: 1249.104
-Dim 500, best certificate is 0.42252936678645714, duration: 545.984
