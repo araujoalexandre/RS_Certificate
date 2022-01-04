@@ -1,10 +1,9 @@
 
 import argparse
 import time
-import torch
+# import torch
 import numpy as np
 import vegas
-from mpi4py import MPI
 from numpy import exp, log, sqrt
 from scipy.stats import norm, lognorm
 
@@ -15,8 +14,9 @@ class Certificate:
   def __init__(self, dist, sigma0, sigma1, pABar_sigma0, pABar_sigma1, dim,
                nitn, neval, nitn_train=None, neval_train=None, verbose=False):
 
-    self.dist = dist
-    self.rank = dist.Get_rank()
+    # self.dist = dist
+    # self.rank = dist.Get_rank()
+    self.rank = 0
     self.verbose = verbose
  
     self.sigma0 = sigma0
@@ -53,37 +53,44 @@ class Certificate:
     
   def compute_k1_cohen(self, eps):
     """ Compute the constant k1 in the context of Cohen certificate """
-    return exp((eps / self.sigma0 * norm.ppf(self.pABar_sigma0)) - self.eps**2 / (2 * self.sigma0**2))
+    return exp((eps / self.sigma0 * norm.ppf(self.pABar_sigma0)) - eps**2 / (2 * self.sigma0**2))
     
   def check_better_certificate(self):
     """ Check if a better certificate is possible """
-    p0, p1 = self.compute_p0_p1(self.k1_cohen, 0)
+    self.eps = 0.1
+    k1_cohen = self.compute_k1_cohen(self.eps)
+    p0, p1 = self.compute_p0_p1(k1_cohen, 0)
+    print(p1, pABar_sigma1)
     if p1 <= pABar_sigma1:
-      self._debug_print('Good News, a better certificate is possible !')
       return True
     else:
-      self._debug_print('Nop ! We cannot do better than Cohen et al.')
       return False
 
   def b(self, k1):
     return -self.eps**2 / (2*self.sigma0**2) - log(k1)
-    
+
   def define_distributions0(self, k1, log_k2):
     self.a1 = (self.sigma0*self.eps) / self.sigma0**2
     self.c1 = +1/2 * (1 - self.sigma0**2 / self.sigma1**2)
-    U = lognorm(self.a1, loc=0, scale=exp(self.b(k1)))
+    U = lognorm(np.abs(self.a1), loc=0, scale=exp(self.b(k1)))
     if log_k2 == 0:
       return U, None
-    R = lognorm(self.c1*sqrt(2*self.dim), loc=0, scale=exp(self.c1 * self.dim + log_k2 - log(k1)))
+    # self._debug_print(f'scale: {self.c1*sqrt(2*self.dim)}')
+    # self._debug_print(f'mu: {self.c1 * self.dim + log_k2 - log(k1)}')
+    scale = np.abs(self.c1*sqrt(2*self.dim))
+    R = lognorm(scale, loc=0, scale=exp(self.c1 * self.dim + log_k2 - log(k1)))
     return U, R
   
   def define_distributions1(self, k1, log_k2):
     self.a2 = (self.sigma1*self.eps) / self.sigma0**2
     self.c2 = -1/2 * (1 - self.sigma1**2 / self.sigma0**2)
-    U = lognorm(self.a2, loc=0, scale=exp(self.b(k1)))
+    U = lognorm(np.abs(self.a2), loc=0, scale=exp(self.b(k1)))
     if log_k2 == 0:
       return U, None
-    R = lognorm(self.c2*sqrt(2*self.dim), loc=0, scale=exp(self.c2 * self.dim + log_k2 - log(k1)))
+    # self._debug_print(f'scale: {self.c2*sqrt(2*self.dim)}')
+    # self._debug_print(f'mu: {self.c2 * self.dim + log_k2 - log(k1)}')
+    scale = np.abs(self.c2*sqrt(2*self.dim))
+    R = lognorm(scale, loc=0, scale=exp(self.c2 * self.dim + log_k2 - log(k1)))
     return U, R
   
   def define_distributions_certificate(self, k1, log_k2):
@@ -94,8 +101,8 @@ class Certificate:
     self.b2 = -self.eps**2/(2*self.sigma1**2) + log_k2 + 1/2 * self.sigma0**2 * ratio * self.dim
     self.a3 = 1/2 * self.sigma0**2 * ratio
     self.a4 = (-self.sigma0*self.eps)/(self.sigma1**2)
-    U = lognorm(self.a1, 0, 1)
-    R = lognorm(self.a2, 0, exp(self.b2))
+    U = lognorm(np.abs(self.a1), 0, 1)
+    R = lognorm(np.abs(self.a2), 0, exp(self.b2))
     return U, R
 
   @vegas.batchintegrand
@@ -113,10 +120,17 @@ class Certificate:
     if log_k2 == 0: # => cohen certificate
       result = U.cdf(1)
     else:
-      m1, m2 = U.ppf(self.percentile), R.ppf(self.percentile)
-      integ = vegas.Integrator([[0, m1], [0, m2]])
-      integ(self.batch_integrand, nitn=self.nitn_train, neval=self.neval_train)
-      result = integ(self.batch_integrand, nitn=self.nitn, neval=self.neval).mean
+      while True:
+        m1, m2 = U.ppf(self.percentile), R.ppf(self.percentile)
+        # self._debug_print(f'Support: [0, {m1:.6f}], [0, {m2:.6f}]')
+        integ = vegas.Integrator([[0, m1], [0, m2]])
+        integ(self.batch_integrand, nitn=self.nitn_train, neval=self.neval_train)
+        result = integ(self.batch_integrand, nitn=self.nitn, neval=self.neval)
+        # print(result.mean, result.Q)
+        Q = result.Q
+        result = result.mean
+        if Q > 0.6:
+          break
     return result
   
   def compute_certificate(self, k1, log_k2):
@@ -126,11 +140,18 @@ class Certificate:
       U = lognorm(a1, 0, exp(b1))
       result = 1 - U.cdf(1)
     else:
-      self.U, self.R = self.define_distributions_certificate(k1, log_k2)
-      m1, m2 = self.U.ppf(self.percentile), self.R.ppf(self.percentile)
-      integ = vegas.Integrator([[0, m1], [0, m2]])
-      integ(self.batch_integrand_certificate, nitn=self.nitn_train, neval=self.neval_train)
-      result = integ(self.batch_integrand_certificate, nitn=self.nitn, neval=self.neval).mean
+      while True:
+        self.U, self.R = self.define_distributions_certificate(k1, log_k2)
+        m1, m2 = self.U.ppf(self.percentile), self.R.ppf(self.percentile)
+        # self._debug_print(f'Support: [0, {m1:.6f}], [0, {m2:.6f}]')
+        integ = vegas.Integrator([[0, m1], [0, m2]])
+        integ(self.batch_integrand_certificate, nitn=self.nitn_train, neval=self.neval_train)
+        result = integ(self.batch_integrand_certificate, nitn=self.nitn, neval=self.neval)
+        # print(result.mean, result.Q)
+        Q = result.Q
+        result = result.mean
+        if Q > 0.6:
+          break
     return result
   
   def compute_p0_p1(self, *args):
@@ -152,7 +173,7 @@ class Certificate:
       k1 = (start + end) / 2
       U0, R0 = self.define_distributions0(k1, log_k2)
       p0 = self.compute_integral(U0, R0, k1, log_k2)
-      self._debug_print(f'start {start}, end {end}, p0 {p0:.5f} / {self.pABar_sigma0}')
+      self._debug_print(f'start {start:.5f}, end {end:.5f}, p0 {p0:.5f} / {self.pABar_sigma0}')
       if self.is_close_bellow(p0, self.pABar_sigma0):
         break
       if p0 < self.pABar_sigma0:
@@ -163,16 +184,17 @@ class Certificate:
   
   def adjust_k2(self, k1, log_k2):
     start = 0.
-    end = -(self.c2 * self.dim + 50)
+    end = np.sign(self.sigma0 - self.sigma1) * (self.c2 * self.dim + 50)
     self._debug_print('\n-- Adjust k2 --')
     while True:
       log_k2 = (start + end) / 2
       U1, R1 = self.define_distributions1(k1, log_k2)
       p1 = self.compute_integral(U1, R1, k1, log_k2)
-      self._debug_print(f'start {start}, end {end}, p1 {p1:.5f} / {self.pABar_sigma1}')
+      self._debug_print(f'start {start:.5f}, end {end:.5f}, p1 {p1:.5f} / {self.pABar_sigma1}')
       if self.is_close_bellow(p1, self.pABar_sigma1):
         break
       if p1 > self.pABar_sigma1:
+      # if p1 < self.pABar_sigma1:
         start = log_k2
       else:
         end = log_k2
@@ -195,21 +217,25 @@ class Certificate:
 
   def check_certificate(self, eps):
     self.eps = eps
-    time_start = time.time()
     k1, log_k2 = self.find_k_values()
     cert = self.compute_certificate(k1, log_k2)
     return cert >= 0.5
 
   def best_certificate(self):
+    if not self.check_better_certificate():
+      return self.cert_cohen
     start = self.cert_cohen - 0.01
     end = start + 0.15
+    n_iter = 0
     while (end - start) >= self.bs_cert_tol:
+      self._debug_print(f'\n--- ITERATION {n_iter} ---')
       self._debug_print(f'start: {start:.4f}, end: {end:.4f}')
       eps = (start + end) / 2
       if self.check_certificate(eps):
         start = eps
       else:
         end = eps
+      n_iter += 1
     return start
 
 
@@ -221,18 +247,38 @@ if __name__ == '__main__':
   parser.add_argument("--dim", type=int, help="Dimension.")
   args = parser.parse_args()
 
-  dist = MPI.COMM_WORLD
-  size = dist.Get_size()
-  rank = dist.Get_rank()
+  # We need to init cuda before loading MPI
+  # in order to avoid a bug with mpi4py
+  # torch.cuda.init()
 
+  # from mpi4py import MPI
+  # dist = MPI.COMM_WORLD
+  # size = dist.Get_size()
+  # rank = dist.Get_rank()
+
+  # sigma0 = 0.50
+  # sigma1 = 0.42
+  # pABar_sigma0 = 0.27
+  # pABar_sigma1 = 0.85
   sigma0 = 0.50
   sigma1 = 0.55
   pABar_sigma0 = 0.80
   pABar_sigma1 = 0.85
   dim = args.dim
-  nitn = 60
-  neval = 4000000 / size
-  verbose = False
+  # nitn = 60
+  # neval = 4000000 / size
+  nitn = 5
+  neval = 10000 # / size
+  verbose = True
+
+  rank = 0
+  if rank == 0:
+    print('-- Context --')
+    print(f'sigma0 {sigma0}, sigma1 {sigma1}')
+    print(f'pABar_sigma0 {pABar_sigma0}, pABar_sigma1 {pABar_sigma1}')
+    print(f'Dim: {dim}')
+
+  dist = None
   cert = Certificate(dist, sigma0, sigma1, pABar_sigma0, pABar_sigma1, dim-2,
                      nitn, neval, nitn_train=nitn, neval_train=neval, verbose=verbose)
 
@@ -241,11 +287,13 @@ if __name__ == '__main__':
   if rank == 0:
     print(f'Dim {dim}, best certificate is {best_cert}, duration: {time.time() - start:.3f}')
 
-  # for eps in [0.40, 0.41, 0.42, 0.43, 0.44, 0.45, 0.46]:
+  # start_global = time.time()
+  # for eps in np.arange(0.25, 3.25, 0.25):
   #   start = time.time()
   #   certificate = cert.check_certificate(eps)
   #   if rank == 0:
   #     print(f'Certification at {eps}: {certificate}, duration {time.time() - start:.3f}')
+  # print(f'global duration: {time.time() - start_global:.3f}')
 
 
 

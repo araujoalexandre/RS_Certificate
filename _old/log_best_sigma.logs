@@ -1,0 +1,5 @@
+Certificat Cohen et al.: 0.42081061678645715
+sigma0 0.5, sigma1 0.55
+Dim 60, best certificate is 0.4951856167864571, duration: 1334.626
+slurmstepd: error: *** STEP 1611403.0 ON r11i2n3 CANCELLED AT 2021-10-20T03:48:22 DUE TO TIME LIMIT ***
+slurmstepd: error: *** STEP 1612317.0 ON r11i2n6 CANCELLED AT 2021-10-20T04:52:28 DUE TO TIME LIMIT ***

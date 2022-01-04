@@ -1,0 +1,19 @@
+sigma0 = 0.50
+sigma1 = 0.55
+pABar_sigma0 = 0.80
+pABar_sigma1 = 0.85
+dim = args.dim
+nitn = 60
+neval = 4000000 / size
+
+Certificat Cohen et al.: 0.42081061678645715
+
+Dim 30, best certificate is 0.5602246792864571, duration: 3985.853
+Dim 60, best certificate is 0.5033887417864571, duration: 2230.227
+Dim 100, best certificate is 0.44303717928645714, duration: 1261.024
+Dim 200, best certificate is 0.42252936678645714, duration: 741.511
+Dim 500, best certificate is 0.42311530428645716, duration: 699.690
+Dim 1000, best certificate is 0.4219434292864571, duration: 699.402
+Dim 2000, best certificate is 0.42252936678645714, duration: 567.300
+Dim 3000, best certificate is 0.42370124178645713, duration: 853.410
+Dim 3072: Best certificate is 0.42135749178645715, duration: 1111.690
